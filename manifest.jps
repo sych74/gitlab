@@ -18,6 +18,13 @@ settings:
         name: le-addon
         caption: Install Let's Encrypt Certificates and Custom Domains Addon. Public IP is required.
         value: false
+        disabled: false
+
+      - type: displayfield
+        hideLabel: true
+        hidden: true
+        name: message   
+        markup:
 
   smtp:
     fields:
@@ -51,21 +58,42 @@ settings:
         default: true
 
 onBeforeInit: |
-  var minCloudlets = 32;
+  var minCloudlets = 32, markup = "", cur = null, text = "used", install = true, extIP = true;
   var settings = jps.settings;
-  var fields = settings.main.fields;
-  var quotas = jelastic.billing.account.GetQuotas('environment.externalip.enabled' + ";" + 'environment.maxcloudletsperrec').array;
+  var fields = {};
+  for (var i = 0, field; field = settings.main.fields[i]; i++)
+    fields[field.name] = field;
+  var quotas = jelastic.billing.account.GetQuotas('environment.externalip.enabled' + ";" + 'environment.maxcloudletsperrec' + ";" + 'environment.endpoint.enabled').array;
   for (var i = 0; i < quotas.length; i++){
     var q = quotas[i], n = toNative(q.quota.name);
-    if (n == 'environment.externalip.enabled' && !q.value) { fields.splice(0,1); };
-    if (n == 'environment.maxcloudletsperrec' && q.value < minCloudlets) {
-      fields.push(
-        {"type": "compositefield","height": 0,"hideLabel": true,"width": 0,"items": [{"height": 0,"type": "string","required": true}]}
-      );
+    if (n == 'environment.externalip.enabled' && !q.value) { 
+      err(q, "required", "1", true);
+      fields["le-addon"].disabled = true;
+      fields["message"].markup = "Let's Encrypt is not available. " + markup + "Please upgrade your account.";
+      fields["message"].cls = "warning";
+      fields["message"].hidden = false;
+      fields["message"].height = 30;
     };
+    if (n == 'environment.maxcloudletsperrec' && q.value < minCloudlets) { install = false; }
+    if (n == 'environment.endpoint.enabled' && !q.value) {
+      err(q, "required", "1", true);
+      install = false;
+      fields["message"].markup = "GitLab server is not available. " + markup + "Please upgrade your account.";
+      fields["message"].cls = "warning";
+      fields["message"].hidden = false;
+      fields["message"].height = 30;
+    }
   }
-  return { result: 0, settings: settings };
-
+  if (!install) {
+    settings.main.fields.push(
+      {"type": "compositefield","height": 0,"hideLabel": true,"width": 0,"items": [{"height": 0,"type": "string","required": true}]}
+    );
+  }
+  function err(e, text, cur, override){
+    var m = (e.quota.description || e.quota.name) + " - " + e.value + ", " + text + " - " + cur + ". ";
+    if (override) markup = m; else markup += m;
+  }
+  return { result: 0, settings: settings, extIP: extIP };
 globals:
   DB_USER: gitlab-${fn.password(5)}
   DB_PASSWORD: ${fn.password(32)}
@@ -106,7 +134,6 @@ nodes:
     DB_PASSWORD: ${globals.DB_PASSWORD}
     USER_EMAIL: ${user.email}
   startService: false
-  extip: ${settings.le-addon:false}
 
 - count: 1
   cloudlets: 32
@@ -174,7 +201,7 @@ onInstall:
   - forEach(nodes.runner):
       register-runner: ${@i.id}
       
-  - if (${settings.le-addon:false}): 
+  - if ('${settings.le-addon:false}' == 'true'): 
       install-LE:
         skipEnvs: true
 
