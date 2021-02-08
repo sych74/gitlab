@@ -20,6 +20,12 @@ settings:
         value: false
         disabled: false
 
+      - type: checkbox
+        name: extIP
+        value: true
+        hideLabel: true
+        hidden: true        
+
       - type: displayfield
         hideLabel: true
         hidden: true
@@ -93,7 +99,7 @@ onBeforeInit: |
     var m = (e.quota.description || e.quota.name) + " - " + e.value + ", " + text + " - " + cur + ". ";
     if (override) markup = m; else markup += m;
   }
-  return { result: 0, settings: settings, extIP: extIP };
+  return { result: 0, settings: settings };
 globals:
   DB_USER: gitlab-${fn.password(5)}
   DB_PASSWORD: ${fn.password(32)}
@@ -134,6 +140,7 @@ nodes:
     DB_PASSWORD: ${globals.DB_PASSWORD}
     USER_EMAIL: ${user.email}
   startService: false
+  extip: ${settings.extIP:false}
 
 - count: 1
   cloudlets: 32
@@ -174,7 +181,7 @@ onInstall:
       id: smtp-addon
       nodeGroup: cp    
 
-  - if (!${settings.le-addon:false}): 
+  - if ('${settings.le-addon:false}' != 'true'): 
       - installAddon:
           id: letsencrypt-ssl-addon
           nodeGroup: cp
