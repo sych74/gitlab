@@ -4,6 +4,7 @@ id: gitlab-ci-cd
 baseUrl: https://raw.githubusercontent.com/jelastic-jps/gitlab/master
 categories:
   - apps/dev-and-admin-tools
+  - apps/clusters
 description:
   text: /text/description.md
   short: 'Private GitLab Server with scalable runners and Docker Hub Registry'
@@ -16,7 +17,7 @@ settings:
     fields:
       - type: checkbox
         name: le-addon
-        caption: Install Let's Encrypt Certificates and Custom Domains Addon. Public IP is required.
+        caption: Install Let's Encrypt SSL certificates (public IP is required)
         value: false
         disabled: false
 
@@ -105,6 +106,9 @@ globals:
   DB_PASSWORD: ${fn.password(32)}
   RUNNER_TOKEN: ${fn.password(32)}
   GITLAB_SECRETS_BASE: ${fn.password(64)}
+  GITLAB_SECRETS_ARE_PRIMARY: ${fn.password(32)}
+  GITLAB_SECRETS_ARE_DETERMINISTIC: ${fn.password(32)}
+  GITLAB_SECRETS_ARE_SALT: ${fn.password(32)}
   ROOT_PASSWORD: ${fn.password(16)}
   HTTP_SECRET: ${fn.password(32)}
   REPO_URL: https://github.com/jelastic/docker-gitlab.git
@@ -134,6 +138,9 @@ nodes:
     JELASTIC_EXPOSE: 80
     RUNNER_TOKEN: ${globals.RUNNER_TOKEN}
     GITLAB_SECRETS_BASE: ${globals.GITLAB_SECRETS_BASE}
+    GITLAB_SECRETS_ARE_PRIMARY: ${globals.GITLAB_SECRETS_ARE_PRIMARY}
+    GITLAB_SECRETS_ARE_DETERMINISTIC: ${globals.GITLAB_SECRETS_ARE_DETERMINISTIC}
+    GITLAB_SECRETS_ARE_SALT: ${globals.GITLAB_SECRETS_ARE_SALT}
     ROOT_PASSWORD: ${globals.ROOT_PASSWORD}
     HTTP_SECRET: ${globals.HTTP_SECRET}
     DB_USER: ${globals.DB_USER}
@@ -231,13 +238,14 @@ actions:
         openssl req -nodes -newkey rsa:4096 -keyout auth.key -out auth.csr -subj "/CN=${env.domain}" &>> /var/log/run.log                       
         openssl x509 -req -extfile <(printf "subjectAltName=DNS:${env.domain},DNS:registry") -in auth.csr -out auth.crt -signkey auth.key -days 3650 &>> /var/log/run.log
         openssl dhparam -out dhparam.pem 2048 &>> /var/log/run.log
+        chmod a+r auth.key
         cp auth.crt ca.crt
     - set-runner-ssl: runner
         
   set-runner-ssl:
     cmd[${this}]: |-
       yum install ca-certificates -y
-      update-ca-trust force-enable
+      update-ca-trust
       while [ ! -f /srv/docker/gitlab-runner/certs/ca.crt ]; do ls -l /srv/docker/gitlab-runner/certs; mount | grep certs; sleep 2; done
       cp /srv/docker/gitlab-runner/certs/ca.crt /etc/pki/ca-trust/source/anchors/
       cp /srv/docker/gitlab-runner/certs/ca.crt /etc/pki/tls/certs/
@@ -313,7 +321,7 @@ actions:
           deployHookType: js
           undeployHook: ${globals.DEPLOY_HOOK_JS}
           undeployHookType: js
-          _customDomains: ${env.domain}
+          customDomains: ${env.domain}
 
     - if (!${this.skipEnvs:false}): 
        cmd[cp]: |-
